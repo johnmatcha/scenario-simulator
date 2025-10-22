@@ -21,28 +21,41 @@ scenarios = {
 }
 
 # Simulate AI guest response and feedback
+import openai
+import os
+
+openai.api_key = os.getenv("OPENAI_API_KEY")
+
 def simulate_guest_response(user_input, scenario):
-    responses = {
-        "Late check-out request": [
-            "I understand, but I really need to rest before my flight. Is there anything you can do?",
-            "That's disappointing. I was hoping for a bit more flexibility."
+    prompt = f"""
+    You are simulating a hotel guest for Wyndham training.
+    Scenario: {scenario}
+    Guest mood and context: {scenarios[scenario]['guest_mood']} - {scenarios[scenario]['context']}
+    Guest initial message: {scenarios[scenario]['initial_guest_message']}
+    Associate response: {user_input}
+    
+    Task:
+    1. Reply as the guest in a realistic tone.
+    2. Provide coaching feedback for the associate (empathy, tone, brand alignment).
+    Format:
+    Guest Reply: <reply>
+    Feedback: <feedback>
+    """
+    
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": "You are an AI guest and coach."},
+            {"role": "user", "content": prompt}
         ],
-        "Guest upset about room cleanliness": [
-            "I expected better from Wyndham. Can you send someone to clean it now?",
-            "This is unacceptable. I want to speak to a manager."
-        ],
-        "VIP upgrade negotiation": [
-            "I stay here often. I think I deserve better treatment.",
-            "Other hotels always upgrade me. Why not here?"
-        ]
-    }
-    feedback = [
-        "Good job acknowledging the guest's concern.",
-        "Consider expressing empathy before offering a solution.",
-        "Try to align your tone with Wyndham's brand voice.",
-        "You could offer alternatives to show flexibility."
-    ]
-    return random.choice(responses[scenario]), random.choice(feedback)
+        temperature=0.7
+    )
+    
+    output = response.choices[0].message["content"]
+    guest_reply = output.split("Feedback:")[0].replace("Guest Reply:", "").strip()
+    feedback = output.split("Feedback:")[1].strip()
+    
+    return guest_reply, feedback
 
 # Streamlit app layout
 st.title("Wyndham AI Scenario Simulator")
