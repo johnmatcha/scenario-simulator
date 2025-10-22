@@ -1,5 +1,9 @@
 import streamlit as st
-import random
+import os
+from openai import OpenAI
+
+# Initialize OpenAI client using secret key
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Define predefined scenarios
 scenarios = {
@@ -20,12 +24,7 @@ scenarios = {
     }
 }
 
-# Simulate AI guest response and feedback
-from openai import OpenAI
-import os
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
+# Function to simulate AI guest response and feedback using GPT
 def simulate_guest_response(user_input, scenario):
     prompt = f"""
     You are simulating a hotel guest for Wyndham training.
@@ -33,7 +32,7 @@ def simulate_guest_response(user_input, scenario):
     Guest mood and context: {scenarios[scenario]['guest_mood']} - {scenarios[scenario]['context']}
     Guest initial message: {scenarios[scenario]['initial_guest_message']}
     Associate response: {user_input}
-    
+
     Task:
     1. Reply as the guest in a realistic tone.
     2. Provide coaching feedback for the associate (empathy, tone, brand alignment).
@@ -57,7 +56,7 @@ def simulate_guest_response(user_input, scenario):
 
     return guest_reply, feedback
 
-# Streamlit app layout
+# Streamlit UI
 st.title("Wyndham AI Scenario Simulator")
 
 # Scenario selection
