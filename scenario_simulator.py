@@ -67,4 +67,3 @@ if user_response:
     st.write(f"Guest: {ai_reply}")
     st.subheader("AI Coach Feedback")
     st.write(feedback)
-``
