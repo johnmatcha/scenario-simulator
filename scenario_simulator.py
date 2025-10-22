@@ -21,10 +21,10 @@ scenarios = {
 }
 
 # Simulate AI guest response and feedback
-import openai
+from openai import OpenAI
 import os
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def simulate_guest_response(user_input, scenario):
     prompt = f"""
@@ -41,8 +41,8 @@ def simulate_guest_response(user_input, scenario):
     Guest Reply: <reply>
     Feedback: <feedback>
     """
-    
-    response = openai.ChatCompletion.create(
+
+    response = client.chat.completions.create(
         model="gpt-4",
         messages=[
             {"role": "system", "content": "You are an AI guest and coach."},
@@ -50,11 +50,11 @@ def simulate_guest_response(user_input, scenario):
         ],
         temperature=0.7
     )
-    
-    output = response.choices[0].message["content"]
+
+    output = response.choices[0].message.content
     guest_reply = output.split("Feedback:")[0].replace("Guest Reply:", "").strip()
     feedback = output.split("Feedback:")[1].strip()
-    
+
     return guest_reply, feedback
 
 # Streamlit app layout
