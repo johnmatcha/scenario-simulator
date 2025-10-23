@@ -139,7 +139,7 @@ Example output:
             last_exception = e
             err_str = str(e).lower()
             # detect model access errors and try fallback
-            if ("model" in err_str and ("not found" in err_str or "does not exist" in err_str or "model_not_found" in err_str or "you do not have access" in err_str)) and attempt_model != models_to_tr[...]
+            if ("model" in err_str and ("not found" in err_str or "does not exist" in err_str or "model_not_found" in err_str or "you do not have access" in err_str)) and attempt_model != models_to_try[-1]:
                 continue
             else:
                 raise RuntimeError(f"OpenAI API request failed: {e}")
@@ -211,7 +211,7 @@ Feedback: ...
         except Exception as e:
             last_exception = e
             err_str = str(e).lower()
-            if ("model" in err_str and ("not found" in err_str or "does not exist" in err_str or "model_not_found" in err_str or "you do not have access" in err_str)) and attempt_model != models_to_tr[...]
+            if ("model" in err_str and ("not found" in err_str or "does not exist" in err_str or "model_not_found" in err_str or "you do not have access" in err_str)) and attempt_model != models_to_try[-1]:
                 continue
             else:
                 raise RuntimeError(f"OpenAI API request failed: {e}")
@@ -288,7 +288,7 @@ Associate REVISED response:
         except Exception as e:
             last_exception = e
             err_str = str(e).lower()
-            if ("model" in err_str and ("not found" in err_str or "does not exist" in err_str or "model_not_found" in err_str or "you do not have access" in err_str)) and attempt_model != models_to_tr[...]
+            if ("model" in err_str and ("not found" in err_str or "does not exist" in err_str or "model_not_found" in err_str or "you do not have access" in err_str)) and attempt_model != models_to_try[-1]:
                 continue
             else:
                 raise RuntimeError(f"OpenAI API request failed: {e}")
