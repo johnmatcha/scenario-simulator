@@ -10,6 +10,7 @@ st.set_page_config(page_title="Wyndham AI Scenario Simulator", layout="centered"
 # Read API key and model from environment (allow Streamlit secrets via os.environ)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") or st.secrets.get("OPENAI_API_KEY", None) if hasattr(st, "secrets") else os.getenv("OPENAI_API_KEY")
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4")
+FALLBACK_MODEL = os.getenv("OPENAI_FALLBACK_MODEL", "gpt-3.5-turbo")
 
 # Initialize OpenAI client (only if key is provided)
 client = None
@@ -77,7 +78,8 @@ def _parse_model_output(content: str):
 def simulate_guest_response(user_input: str, scenario_name: str, model: str = DEFAULT_MODEL):
     """
     Sends the prompt to OpenAI and returns (guest_reply, feedback, raw_model_output).
-    Raises RuntimeError on configuration / API errors.
+    Will automatically retry with a fallback model (FALLBACK_MODEL) if the selected model isn't available.
+    Raises RuntimeError on configuration / API errors that aren't related to missing model access.
     """
     if client is None:
         raise RuntimeError("OpenAI client not initialized. Make sure OPENAI_API_KEY is set in the environment or Streamlit secrets.")
@@ -111,33 +113,56 @@ Guest Reply: ...
 Feedback: ...
 """
 
-    try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "You are an AI assistant that replies as a hotel guest and provides coaching feedback. Output must be a single JSON object with keys 'guest_reply' and 'feedback' if possible."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.6,
-            max_tokens=600,
-        )
-    except Exception as e:
-        # Surface a readable error to the caller
-        raise RuntimeError(f"OpenAI API request failed: {e}")
+    models_to_try = [model]
+    if FALLBACK_MODEL and FALLBACK_MODEL != model:
+        models_to_try.append(FALLBACK_MODEL)
 
-    # Extract content defensively (different client versions may store text differently)
-    content = None
-    try:
-        # preferred: choices[0].message.content
-        content = response.choices[0].message.content
-    except Exception:
+    last_exception = None
+    used_model = None
+    raw_content = None
+    for attempt_model in models_to_try:
         try:
-            content = response.choices[0].text
-        except Exception:
-            # last resort: stringify entire response object
-            content = str(response)
+            response = client.chat.completions.create(
+                model=attempt_model,
+                messages=[
+                    {"role": "system", "content": "You are an AI assistant that replies as a hotel guest and provides coaching feedback. Output must be a single JSON object with keys 'guest_reply' and 'feedback'."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.6,
+                max_tokens=600,
+            )
+            # Extract content defensively (different client versions may store text differently)
+            content = None
+            try:
+                content = response.choices[0].message.content
+            except Exception:
+                try:
+                    content = response.choices[0].text
+                except Exception:
+                    content = str(response)
+            raw_content = content
+            used_model = attempt_model
+            break
+        except Exception as e:
+            last_exception = e
+            err_str = str(e).lower()
+            # if error suggests model not found / no access, try next fallback; else re-raise
+            if ("model" in err_str and ("not found" in err_str or "does not exist" in err_str or "model_not_found" in err_str or "you do not have access" in err_str)) and attempt_model != models_to_try[-1]:
+                # try next fallback
+                continue
+            else:
+                # non-model-related failure -- surface to caller
+                raise RuntimeError(f"OpenAI API request failed: {e}")
 
-    guest_reply, feedback, raw = _parse_model_output(content)
+    if used_model is None:
+        # All attempts failed
+        raise RuntimeError(f"OpenAI API request failed after trying models {models_to_try}: {last_exception}")
+
+    # If we fell back to a different model, annotate raw output so user knows what happened
+    if used_model != model:
+        raw_content = f"(NOTE: original model '{model}' not available; used fallback '{used_model}')\n\n{raw_content or ''}"
+
+    guest_reply, feedback, raw = _parse_model_output(raw_content)
     return guest_reply, feedback, raw
 
 
@@ -162,6 +187,9 @@ st.write(scenarios[selected_scenario]["context"])
 
 st.subheader("Guest Message")
 st.write(f"Guest ({scenarios[selected_scenario]['guest_mood']}): {scenarios[selected_scenario]['initial_guest_message']}")
+
+# Show which model will be used (and fallback)
+st.info(f"Primary model: {DEFAULT_MODEL}  •  Fallback model: {FALLBACK_MODEL}")
 
 # User response text area and button to trigger simulation
 user_response = st.text_area("Your Response (what you'd say to the guest):", height=150)
