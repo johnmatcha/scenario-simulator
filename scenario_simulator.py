@@ -23,15 +23,15 @@ if OPENAI_API_KEY:
 # Predefined scenario categories (seed templates)
 scenarios = {
     "Late check-out request": {
-        "guest_mood": "polite but firm",
+        "guest_mood": "polite but direct",
         "context_seed": "Guest requests a late check-out, but hotel is at full capacity for the next day."
     },
     "Guest upset about room cleanliness": {
-        "guest_mood": "frustrated",
+        "guest_mood": "polite but direct",
         "context_seed": "Guest found hair in the bathroom and the trash wasn't emptied."
     },
     "VIP upgrade negotiation": {
-        "guest_mood": "assertive",
+        "guest_mood": "polite but direct",
         "context_seed": "A loyalty member is asking for a complimentary upgrade."
     }
 }
@@ -86,6 +86,24 @@ def _get_text_from_response(response):
     return content
 
 
+# ----------------- Utility helpers -----------------
+def _model_error_allows_fallback(err_str: str, current_model: str, models_to_try: list):
+    """Return True if the error string looks like a model access problem and a fallback remains."""
+    err = (err_str or "").lower()
+    model_issues = (
+        "not found",
+        "does not exist",
+        "model_not_found",
+        "you do not have access",
+        "permission denied",
+    )
+    if any(tok in err for tok in model_issues):
+        # allow fallback if current_model is not the last in models_to_try
+        if current_model != models_to_try[-1]:
+            return True
+    return False
+
+
 # ----------------- API interactions -----------------
 def generate_scenario_context_and_message(scenario_name: str, model: str = DEFAULT_MODEL):
     """
@@ -99,14 +117,14 @@ def generate_scenario_context_and_message(scenario_name: str, model: str = DEFAU
         raise ValueError(f"Unknown scenario: {scenario_name}")
 
     seed = scenarios[scenario_name]["context_seed"]
-    mood = scenarios[scenario_name].get("guest_mood", "neutral")
+    mood = scenarios[scenario_name].get("guest_mood", "polite but direct")
 
     prompt = f"""
-You are a creative curriculum writer for a hotel training simulator. Given the following scenario seed and guest mood, generate:
-1) A richly detailed, instantly relatable Scenario Context (2-4 sentences). Make it engaging, give small concrete details (time of day, service constraints, guest backstory) so the learner can picture[...]
-2) A short Guest Message (one or two sentences) that naturally flows from the scenario context and conveys the guest's tone.
+You are a concise, practical curriculum writer for a hotel training simulator. Given the scenario seed and guest mood, generate:
+1) A short narrative Scenario Context (2-3 sentences) that sounds real and not flowery — concrete details only (time of day, service constraints, brief backstory).
+2) A brief Guest Message (one sentence) that is polite but direct and includes an unanticipated reason that makes the request feel urgent.
 
-Return EXACTLY a JSON object with keys "scenario_context" and "guest_message". Do not include any extra explanation or text.
+Return EXACTLY a JSON object with keys "scenario_context" and "guest_message" and nothing else.
 Seed: {seed}
 Guest mood: {mood}
 Scenario name: {scenario_name}
@@ -139,7 +157,7 @@ Example output:
             last_exception = e
             err_str = str(e).lower()
             # detect model access errors and try fallback
-            if ("model" in err_str and ("not found" in err_str or "does not exist" in err_str or "model_not_found" in err_str or "you do not have access" in err_str)) and attempt_model != models_to_try[-1]:
+            if _model_error_allows_fallback(err_str, attempt_model, models_to_try):
                 continue
             else:
                 raise RuntimeError(f"OpenAI API request failed: {e}")
@@ -176,7 +194,7 @@ Associate response:
 {user_input}
 
 Task:
-1) Reply AS THE GUEST with a realistic in-character response (brief, 1-3 sentences). If the associate's response does not accommodate the guest's request or feels dismissive, the guest should show sli[...]
+1) Reply AS THE GUEST with a realistic in-character response (brief, 1-3 sentences). The guest should be polite but direct; if their request was not accommodated, include an unanticipated but plausible reason that increases urgency.
 2) Provide short coaching feedback for the associate covering empathy, tone, clarity, and brand alignment.
 
 RETURN FORMAT:
@@ -211,7 +229,7 @@ Feedback: ...
         except Exception as e:
             last_exception = e
             err_str = str(e).lower()
-            if ("model" in err_str and ("not found" in err_str or "does not exist" in err_str or "model_not_found" in err_str or "you do not have access" in err_str)) and attempt_model != models_to_try[-1]:
+            if _model_error_allows_fallback(err_str, attempt_model, models_to_try):
                 continue
             else:
                 raise RuntimeError(f"OpenAI API request failed: {e}")
@@ -239,14 +257,14 @@ def analyze_user_responses(original_response: str, revised_response: str, scenar
         raise RuntimeError("OpenAI client not initialized. Make sure OPENAI_API_KEY is set.")
 
     prompt = f"""
-You are an expert training coach for hotel associates. Given the scenario context, the guest's initial message, the guest's reply to the associate's first response, the associate's ORIGINAL response, [...]
+You are an expert training coach for hotel associates. Given the scenario context, the guest's initial message, the guest's reply to the associate's first response, the associate's ORIGINAL response, and the associate's REVISED response, do the following:
 
 1) A numeric score from 0 to 100 evaluating the REVISED response on empathy, tone, clarity, problem-solving, and brand alignment (weight equally).
 2) A short analysis explaining why the score was given (2-4 sentences).
 3) Concise actionable recommendations the associate can apply immediately.
 
 Return EXACTLY a JSON object with keys:
-{{"score": <int 0-100>, "analysis": "<text>", "recommendations": "<text>"}}
+{"score": <int 0-100>, "analysis": "<text>", "recommendations": "<text>"}
 
 Scenario Context:
 {scenario_context}
@@ -288,7 +306,7 @@ Associate REVISED response:
         except Exception as e:
             last_exception = e
             err_str = str(e).lower()
-            if ("model" in err_str and ("not found" in err_str or "does not exist" in err_str or "model_not_found" in err_str or "you do not have access" in err_str)) and attempt_model != models_to_try[-1]:
+            if _model_error_allows_fallback(err_str, attempt_model, models_to_try):
                 continue
             else:
                 raise RuntimeError(f"OpenAI API request failed: {e}")
@@ -327,117 +345,139 @@ if not OPENAI_API_KEY:
     st.markdown("If you don't have an API key and want me to provide a local mock mode for testing, tell me and I can add it.")
     st.stop()
 
-# Scenario selection
-selected_scenario = st.selectbox("Choose a guest scenario:", list(scenarios.keys()))
+# Represent scenarios as clickable tabs
+tabs = st.tabs(list(scenarios.keys()))
 
-# Offer a refresh button to re-roll scenario context and guest message
-refresh_button = st.button("Refresh Scenario")
-
-# Regenerate scenario context/guest message when selection changes or refresh pressed
+# Ensure session state keys
 if "scenario_name" not in st.session_state:
     st.session_state["scenario_name"] = None
+if "chat_messages" not in st.session_state:
+    st.session_state["chat_messages"] = []
 
-need_regen = refresh_button or (st.session_state.get("scenario_name") != selected_scenario) or ("scenario_context" not in st.session_state)
-if need_regen:
-    try:
-        gen = generate_scenario_context_and_message(selected_scenario)
-        st.session_state["scenario_context"] = gen["scenario_context"]
-        st.session_state["guest_message"] = gen["guest_message"]
-        st.session_state["scenario_raw"] = gen["raw"]
-        st.session_state["scenario_name"] = selected_scenario
-        st.session_state["scenario_model"] = gen.get("used_model")
-        # Clear previous simulation results
-        for k in ["guest_reply", "feedback", "raw_simulation", "original_response", "revised_response", "analysis_result"]:
-            if k in st.session_state:
-                del st.session_state[k]
-    except Exception as e:
-        st.error(f"Failed to generate scenario: {e}")
-        st.stop()
-
-# Display context and guest message
-st.subheader("Scenario Context")
-st.write(st.session_state.get("scenario_context", ""))
-
-st.subheader("Guest Message")
-st.write(st.session_state.get("guest_message", ""))
-
-# Optionally show model info (default: hidden). Set SHOW_MODEL_INFO=1|true|yes to reveal.
-SHOW_MODEL_INFO = os.getenv("SHOW_MODEL_INFO", "false").lower() in ("1", "true", "yes")
-if SHOW_MODEL_INFO:
-    st.info(f"Primary model: {DEFAULT_MODEL}  •  Fallback model: {FALLBACK_MODEL}")
-
-# User response text area and button to trigger simulation
-user_response = st.text_area("Your Response (what you'd say to the guest):", height=150, key="original_response")
-simulate = st.button("Simulate")
-
-if simulate:
-    if not st.session_state.get("original_response") or not st.session_state.get("original_response").strip():
-        st.warning("Please enter a response before simulating.")
-    else:
-        with st.spinner("Generating guest reply and feedback..."):
+# For each tab, show a small preview and a button to load that scenario
+for idx, (name, data) in enumerate(scenarios.items()):
+    with tabs[idx]:
+        st.write(f"**{name}** — mood: {data.get('guest_mood')}")
+        st.write(data.get("context_seed"))
+        if st.button(f"Use this scenario: {name}", key=f"use_scenario_{idx}"):
+            st.session_state["scenario_name"] = name
+            # Force regeneration of scenario context/message
             try:
-                guest_reply, feedback, raw = simulate_guest_response(
-                    st.session_state["original_response"].strip(),
-                    st.session_state["scenario_context"],
-                    st.session_state["guest_message"],
-                )
-                st.session_state["guest_reply"] = guest_reply
-                st.session_state["feedback"] = feedback
-                st.session_state["raw_simulation"] = raw
-
-                st.subheader("AI Guest Reply")
-                if guest_reply:
-                    st.write(guest_reply)
-                else:
-                    st.write("_No parsed guest reply. See raw output below._")
-
-                st.subheader("AI Coach Feedback")
-                if feedback:
-                    st.write(feedback)
-                else:
-                    st.write("_No parsed feedback. See raw output below._")
-
+                gen = generate_scenario_context_and_message(name)
+                st.session_state["scenario_context"] = gen["scenario_context"]
+                st.session_state["guest_message"] = gen["guest_message"]
+                st.session_state["scenario_raw"] = gen["raw"]
+                st.session_state["scenario_model"] = gen.get("used_model")
+                # initialize chat messages with system context and guest opening
+                st.session_state["chat_messages"] = [
+                    {"role": "system", "text": st.session_state["scenario_context"]},
+                    {"role": "assistant", "text": st.session_state["guest_message"]},
+                ]
+                # clear previous results
+                for k in ["guest_reply", "feedback", "raw_simulation", "original_response", "revised_response", "analysis_result"]:
+                    if k in st.session_state:
+                        del st.session_state[k]
             except Exception as e:
-                st.error(f"Simulation failed: {e}")
+                st.error(f"Failed to generate scenario: {e}")
 
-# If we have guest reply and feedback, allow the user to submit a revised attempt
+# Global refresh button to re-roll current scenario
+if st.button("Refresh Scenario"):
+    if st.session_state.get("scenario_name"):
+        try:
+            gen = generate_scenario_context_and_message(st.session_state["scenario_name"])
+            st.session_state["scenario_context"] = gen["scenario_context"]
+            st.session_state["guest_message"] = gen["guest_message"]
+            st.session_state["scenario_raw"] = gen["raw"]
+            st.session_state["scenario_model"] = gen.get("used_model")
+            st.session_state["chat_messages"] = [
+                {"role": "system", "text": st.session_state["scenario_context"]},
+                {"role": "assistant", "text": st.session_state["guest_message"]},
+            ]
+            for k in ["guest_reply", "feedback", "raw_simulation", "original_response", "revised_response", "analysis_result"]:
+                if k in st.session_state:
+                    del st.session_state[k]
+        except Exception as e:
+            st.error(f"Failed to refresh scenario: {e}")
+
+# Chat area
+st.subheader("Conversation")
+chat_box = st.container()
+with chat_box:
+    # Render messages
+    for msg in st.session_state.get("chat_messages", []):
+        role = msg.get("role", "assistant")
+        text = msg.get("text", "")
+        try:
+            with st.chat_message(role):
+                st.write(text)
+        except Exception:
+            # fallback for older streamlit
+            if role == "user":
+                st.write(f"You: {text}")
+            elif role == "system":
+                st.write(f"Context: {text}")
+            else:
+                st.write(text)
+
+# User sends original response via chat_input
+user_input = st.chat_input("Respond to the guest (press Enter to send)...")
+if user_input:
+    # append user message
+    st.session_state["chat_messages"].append({"role": "user", "text": user_input})
+    st.session_state["original_response"] = user_input
+    # call simulation
+    with st.spinner("Generating guest reply and feedback..."):
+        try:
+            guest_reply, feedback, raw = simulate_guest_response(
+                user_input,
+                st.session_state.get("scenario_context", ""),
+                st.session_state.get("guest_message", ""),
+            )
+            st.session_state["guest_reply"] = guest_reply
+            st.session_state["feedback"] = feedback
+            st.session_state["raw_simulation"] = raw
+
+            # append assistant guest reply
+            st.session_state["chat_messages"].append({"role": "assistant", "text": guest_reply or "(No parsed guest reply)"})
+            # append coach feedback as assistant message prefixed
+            coach_text = (feedback or "(No parsed feedback)")
+            st.session_state["chat_messages"].append({"role": "assistant", "text": f"Coach: {coach_text}"})
+
+            # re-render (Streamlit will automatically rerun and show updated chat)
+        except Exception as e:
+            st.error(f"Simulation failed: {e}")
+
+# If we have guest reply and feedback, allow revised attempt via chat_input
 if st.session_state.get("guest_reply") is not None:
-    st.subheader("Try Again — Revised Response")
-    revised_response = st.text_area("Your Revised Response (apply feedback, be concise):", height=150, key="revised_response")
-    submit_revised = st.button("Submit Revised Response")
+    revised_input = st.chat_input("Try a revised response (apply feedback) — press Enter to submit...", key="revised_input")
+    if revised_input:
+        # append revised user message
+        st.session_state["chat_messages"].append({"role": "user", "text": revised_input})
+        st.session_state["revised_response"] = revised_input
+        with st.spinner("Scoring and analyzing your revised response..."):
+            try:
+                analysis_result = analyze_user_responses(
+                    st.session_state.get("original_response", ""),
+                    st.session_state.get("revised_response", ""),
+                    st.session_state.get("scenario_context", ""),
+                    st.session_state.get("guest_message", ""),
+                    st.session_state.get("guest_reply", ""),
+                )
+                st.session_state["analysis_result"] = analysis_result
 
-    if submit_revised:
-        if not st.session_state.get("revised_response") or not st.session_state.get("revised_response").strip():
-            st.warning("Please enter a revised response before submitting.")
-        else:
-            with st.spinner("Scoring and analyzing your revised response..."):
-                try:
-                    analysis_result = analyze_user_responses(
-                        st.session_state.get("original_response", ""),
-                        st.session_state.get("revised_response", ""),
-                        st.session_state.get("scenario_context", ""),
-                        st.session_state.get("guest_message", ""),
-                        st.session_state.get("guest_reply", ""),
-                    )
-                    st.session_state["analysis_result"] = analysis_result
+                # append coach analysis message
+                score = analysis_result.get("score")
+                analysis = analysis_result.get("analysis") or ""
+                recommendations = analysis_result.get("recommendations") or ""
+                coach_response = ""
+                if score is not None:
+                    coach_response += f"Score (0-100): {score}\n\n"
+                coach_response += analysis + "\n\nRecommendations: " + recommendations
+                st.session_state["chat_messages"].append({"role": "assistant", "text": coach_response})
 
-                    st.subheader("Overall Score")
-                    score = analysis_result.get("score")
-                    if score is not None:
-                        st.metric("Score (0-100)", score)
-                    else:
-                        st.write("_No numeric score parsed. See full analysis below._")
-
-                    st.subheader("Analysis")
-                    st.write(analysis_result.get("analysis") or "_No analysis parsed._")
-
-                    st.subheader("Recommendations")
-                    st.write(analysis_result.get("recommendations") or "_No recommendations parsed._")
-
-                    with st.expander("Show raw analyzer output"):
-                        st.code(analysis_result.get("raw", ""))
-                except Exception as e:
-                    st.error(f"Analysis failed: {e}")
+                # Show raw analyzer output in expander below
+            except Exception as e:
+                st.error(f"Analysis failed: {e}")
 
 # Expanders to show raw outputs for debugging
 if st.session_state.get("scenario_raw"):
@@ -447,3 +487,7 @@ if st.session_state.get("scenario_raw"):
 if st.session_state.get("raw_simulation"):
     with st.expander("Show raw simulation output"):
         st.code(st.session_state["raw_simulation"])
+
+if st.session_state.get("analysis_result"):
+    with st.expander("Show raw analyzer output"):
+        st.code(st.session_state.get("analysis_result", {}).get("raw", ""))
