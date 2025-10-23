@@ -103,7 +103,7 @@ def generate_scenario_context_and_message(scenario_name: str, model: str = DEFAU
 
     prompt = f"""
 You are a creative curriculum writer for a hotel training simulator. Given the following scenario seed and guest mood, generate:
-1) A richly detailed, instantly relatable Scenario Context (2-4 sentences). Make it engaging, give small concrete details (time of day, service constraints, guest backstory) so the learner can picture the interaction.
+1) A richly detailed, instantly relatable Scenario Context (2-4 sentences). Make it engaging, give small concrete details (time of day, service constraints, guest backstory) so the learner can picture[...]
 2) A short Guest Message (one or two sentences) that naturally flows from the scenario context and conveys the guest's tone.
 
 Return EXACTLY a JSON object with keys "scenario_context" and "guest_message". Do not include any extra explanation or text.
@@ -139,7 +139,7 @@ Example output:
             last_exception = e
             err_str = str(e).lower()
             # detect model access errors and try fallback
-            if ("model" in err_str and ("not found" in err_str or "does not exist" in err_str or "model_not_found" in err_str or "you do not have access" in err_str)) and attempt_model != models_to_try[-1]:
+            if ("model" in err_str and ("not found" in err_str or "does not exist" in err_str or "model_not_found" in err_str or "you do not have access" in err_str)) and attempt_model != models_to_tr[...]
                 continue
             else:
                 raise RuntimeError(f"OpenAI API request failed: {e}")
@@ -176,7 +176,7 @@ Associate response:
 {user_input}
 
 Task:
-1) Reply AS THE GUEST with a realistic in-character response (brief, 1-3 sentences). If the associate's response does not accommodate the guest's request or feels dismissive, the guest should show slightly amplified irritation. If the associate offers a clear, satisfactory solution or compensation, the guest should show jubilation/relief. Be realistic.
+1) Reply AS THE GUEST with a realistic in-character response (brief, 1-3 sentences). If the associate's response does not accommodate the guest's request or feels dismissive, the guest should show sli[...]
 2) Provide short coaching feedback for the associate covering empathy, tone, clarity, and brand alignment.
 
 RETURN FORMAT:
@@ -211,7 +211,7 @@ Feedback: ...
         except Exception as e:
             last_exception = e
             err_str = str(e).lower()
-            if ("model" in err_str and ("not found" in err_str or "does not exist" in err_str or "model_not_found" in err_str or "you do not have access" in err_str)) and attempt_model != models_to_try[-1]:
+            if ("model" in err_str and ("not found" in err_str or "does not exist" in err_str or "model_not_found" in err_str or "you do not have access" in err_str)) and attempt_model != models_to_tr[...]
                 continue
             else:
                 raise RuntimeError(f"OpenAI API request failed: {e}")
@@ -239,7 +239,7 @@ def analyze_user_responses(original_response: str, revised_response: str, scenar
         raise RuntimeError("OpenAI client not initialized. Make sure OPENAI_API_KEY is set.")
 
     prompt = f"""
-You are an expert training coach for hotel associates. Given the scenario context, the guest's initial message, the guest's reply to the associate's first response, the associate's ORIGINAL response, and the associate's REVISED response, provide:
+You are an expert training coach for hotel associates. Given the scenario context, the guest's initial message, the guest's reply to the associate's first response, the associate's ORIGINAL response, [...]
 
 1) A numeric score from 0 to 100 evaluating the REVISED response on empathy, tone, clarity, problem-solving, and brand alignment (weight equally).
 2) A short analysis explaining why the score was given (2-4 sentences).
@@ -288,7 +288,7 @@ Associate REVISED response:
         except Exception as e:
             last_exception = e
             err_str = str(e).lower()
-            if ("model" in err_str and ("not found" in err_str or "does not exist" in err_str or "model_not_found" in err_str or "you do not have access" in err_str)) and attempt_model != models_to_try[-1]:
+            if ("model" in err_str and ("not found" in err_str or "does not exist" in err_str or "model_not_found" in err_str or "you do not have access" in err_str)) and attempt_model != models_to_tr[...]
                 continue
             else:
                 raise RuntimeError(f"OpenAI API request failed: {e}")
@@ -361,7 +361,10 @@ st.write(st.session_state.get("scenario_context", ""))
 st.subheader("Guest Message")
 st.write(st.session_state.get("guest_message", ""))
 
-st.info(f"Primary model: {DEFAULT_MODEL}  •  Fallback model: {FALLBACK_MODEL}")
+# Optionally show model info (default: hidden). Set SHOW_MODEL_INFO=1|true|yes to reveal.
+SHOW_MODEL_INFO = os.getenv("SHOW_MODEL_INFO", "false").lower() in ("1", "true", "yes")
+if SHOW_MODEL_INFO:
+    st.info(f"Primary model: {DEFAULT_MODEL}  •  Fallback model: {FALLBACK_MODEL}")
 
 # User response text area and button to trigger simulation
 user_response = st.text_area("Your Response (what you'd say to the guest):", height=150, key="original_response")
