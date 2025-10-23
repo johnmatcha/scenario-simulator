@@ -21,6 +21,7 @@ if OPENAI_API_KEY:
     client = OpenAI(api_key=OPENAI_API_KEY)
 
 # Predefined scenario categories (seed templates)
+# NOTE: we keep a guest_mood in the seed for generation guidance, but we do not display the mood in the UI.
 scenarios = {
     "Late check-out request": {
         "guest_mood": "polite but direct",
@@ -108,7 +109,7 @@ def _model_error_allows_fallback(err_str: str, current_model: str, models_to_try
 def generate_scenario_context_and_message(scenario_name: str, model: str = DEFAULT_MODEL):
     """
     Use the API to generate a vivid scenario context and a matching guest initial message.
-    Returns dict {scenario_context, guest_message, raw}
+    Returns dict {scenario_context, guest_message, raw, used_model}
     """
     if client is None:
         raise RuntimeError("OpenAI client not initialized. Make sure OPENAI_API_KEY is set.")
@@ -121,8 +122,8 @@ def generate_scenario_context_and_message(scenario_name: str, model: str = DEFAU
 
     prompt = f"""
 You are a concise, practical curriculum writer for a hotel training simulator. Given the scenario seed and guest mood, generate:
-1) A short narrative Scenario Context (2-3 sentences) that sounds real and not flowery — concrete details only (time of day, service constraints, brief backstory).
-2) A brief Guest Message (one sentence) that is polite but direct and includes an unanticipated reason that makes the request feel urgent.
+1) A short narrative Scenario Context (3-4 sentences) that sounds real and not flowery — give concrete details (time of day, service constraints, brief backstory) so the learner can picture the situation.
+2) A descriptive Guest Message (one sentence, up to two) that is polite but direct and includes an unanticipated, plausible reason that makes the guest's request feel urgent.
 
 Return EXACTLY a JSON object with keys "scenario_context" and "guest_message" and nothing else.
 Seed: {seed}
@@ -148,7 +149,7 @@ Example output:
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.8,
-                max_tokens=300,
+                max_tokens=400,
             )
             raw_content = _get_text_from_response(response)
             used_model = attempt_model
@@ -264,7 +265,7 @@ You are an expert training coach for hotel associates. Given the scenario contex
 3) Concise actionable recommendations the associate can apply immediately.
 
 Return EXACTLY a JSON object with keys:
-{"score": <int 0-100>, "analysis": "<text>", "recommendations": "<text>"}
+{{"score": <int 0-100>, "analysis": "<text>", "recommendations": "<text>"}}
 
 Scenario Context:
 {scenario_context}
@@ -345,7 +346,10 @@ if not OPENAI_API_KEY:
     st.markdown("If you don't have an API key and want me to provide a local mock mode for testing, tell me and I can add it.")
     st.stop()
 
-# Represent scenarios as clickable tabs
+# Optionally show model info (default: hidden). Set SHOW_MODEL_INFO=1|true|yes to reveal.
+SHOW_MODEL_INFO = os.getenv("SHOW_MODEL_INFO", "false").lower() in ("1", "true", "yes")
+
+# Represent scenarios as clickable tabs (tabs show the scenario name in the tab label; inside the tab we show an Overview)
 tabs = st.tabs(list(scenarios.keys()))
 
 # Ensure session state keys
@@ -354,11 +358,14 @@ if "scenario_name" not in st.session_state:
 if "chat_messages" not in st.session_state:
     st.session_state["chat_messages"] = []
 
-# For each tab, show a small preview and a button to load that scenario
+# For each tab, show an Overview and a small practice note. Do NOT show the guest's mood in the UI.
 for idx, (name, data) in enumerate(scenarios.items()):
     with tabs[idx]:
-        st.write(f"**{name}** — mood: {data.get('guest_mood')}")
+        st.subheader("Overview")
         st.write(data.get("context_seed"))
+        st.write(
+            "Why practice this: short roleplays like this help you quickly test phrasing that preserves brand tone while resolving urgent guest needs."
+        )
         if st.button(f"Use this scenario: {name}", key=f"use_scenario_{idx}"):
             st.session_state["scenario_name"] = name
             # Force regeneration of scenario context/message
@@ -380,8 +387,11 @@ for idx, (name, data) in enumerate(scenarios.items()):
             except Exception as e:
                 st.error(f"Failed to generate scenario: {e}")
 
-# Global refresh button to re-roll current scenario
-if st.button("Refresh Scenario"):
+# "Scenario" header (formerly "Conversation") with Refresh button placed beside it
+col_left, col_right = st.columns([10, 1])
+col_left.subheader("Scenario")
+# Place the Refresh Scenario button to the right of the header
+if col_right.button("Refresh Scenario"):
     if st.session_state.get("scenario_name"):
         try:
             gen = generate_scenario_context_and_message(st.session_state["scenario_name"])
@@ -398,9 +408,10 @@ if st.button("Refresh Scenario"):
                     del st.session_state[k]
         except Exception as e:
             st.error(f"Failed to refresh scenario: {e}")
+    else:
+        st.warning("No scenario is active. Choose a scenario tab and click 'Use this scenario' first.")
 
-# Chat area
-st.subheader("Conversation")
+# Chat area (conversation-like)
 chat_box = st.container()
 with chat_box:
     # Render messages
@@ -442,8 +453,6 @@ if user_input:
             # append coach feedback as assistant message prefixed
             coach_text = (feedback or "(No parsed feedback)")
             st.session_state["chat_messages"].append({"role": "assistant", "text": f"Coach: {coach_text}"})
-
-            # re-render (Streamlit will automatically rerun and show updated chat)
         except Exception as e:
             st.error(f"Simulation failed: {e}")
 
@@ -474,20 +483,20 @@ if st.session_state.get("guest_reply") is not None:
                     coach_response += f"Score (0-100): {score}\n\n"
                 coach_response += analysis + "\n\nRecommendations: " + recommendations
                 st.session_state["chat_messages"].append({"role": "assistant", "text": coach_response})
-
-                # Show raw analyzer output in expander below
             except Exception as e:
                 st.error(f"Analysis failed: {e}")
 
-# Expanders to show raw outputs for debugging
-if st.session_state.get("scenario_raw"):
+# Show raw generated scenario output only when debugging is explicitly enabled
+if SHOW_MODEL_INFO and st.session_state.get("scenario_raw"):
     with st.expander("Show raw generated scenario output"):
         st.code(st.session_state["scenario_raw"])
 
+# Raw simulation output (kept for debugging)
 if st.session_state.get("raw_simulation"):
     with st.expander("Show raw simulation output"):
         st.code(st.session_state["raw_simulation"])
 
+# Raw analyzer output (kept for debugging)
 if st.session_state.get("analysis_result"):
     with st.expander("Show raw analyzer output"):
         st.code(st.session_state.get("analysis_result", {}).get("raw", ""))
